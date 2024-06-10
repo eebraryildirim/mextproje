@@ -90,6 +90,6 @@ if "gelir_listesi" in st.session_state and "gider_listesi" in st.session_state:
         plt.title("Toplam Gelir ve Gider Dağılımı")
         st.pyplot(fig1)
     else:
-        st.info("Gelir veya gider verisi bulunamadı.")
+        st.info("Gelir veya gider verisi bulunamadı...")
 
 
