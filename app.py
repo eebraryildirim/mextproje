@@ -1,95 +1,116 @@
+import os
+import io
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
+import google.generativeai as genai
+from dotenv import load_dotenv
+from PIL import Image
+from PyPDF2 import PdfReader
+import fitz  # this is pymupdf
 
-st.set_page_config(
-    page_title="Kişisel Finans ve Bütçe Yönetimi",
-    page_icon="💸",
-    initial_sidebar_state="expanded"
-)
 
-st.title(":green[Kişisel Finans ve Bütçe Yönetimi]")
-st.write("Gelir ve giderlerinizi takip edin, bütçenizi yönetin.")
-st.header("Gelir ve Gider Ekle")
+st.set_page_config(page_title="ATS Sistemi",
+                   page_icon=":robot:",
+                   initial_sidebar_state="expanded")
 
-# Gelir ekleme formu
-with st.form("gelir_formu"):
-    st.write("Gelir Ekle")
-    gelir_kaynak = st.selectbox("Gelir Kaynağı Seçiniz:", ["Maaş", "Kira", "Diğer"])
-    gelir_miktar = st.number_input("Gelir Miktarı", min_value=0)
-    gelir_tarih = st.date_input("Gelir Tarihi")
-    gelir_submit = st.form_submit_button("Gelir Ekle")
+st.header("Uygulama v1")
 
-    if gelir_submit:
-        st.session_state.gelir_listesi = st.session_state.get("gelir_listesi", [])
-        st.session_state.gelir_listesi.append({"Kaynak": gelir_kaynak, "Miktar": gelir_miktar, "Tarih": gelir_tarih})
-        st.success("Gelir başarıyla eklendi!")
+genai.configure(api_key= "AIzaSyAmXC386mweCOOW6NgF496s24I1GMNGifQ")
 
-# Gider ekleme formu
-with st.form("gider_formu"):
-    st.write("Gider Ekle")
-    gider_kategori = st.selectbox("Gider Seçiniz:", ["Gıda", "Eğlence", "Alışveriş", "Seyahat", "Diğer"])
-    gider_miktar = st.number_input("Gider Miktarı", min_value=0)
-    gider_tarih = st.date_input("Gider Tarihi")
-    gider_submit = st.form_submit_button("Gider Ekle")
 
-    if gider_submit:
-        st.session_state.gider_listesi = st.session_state.get("gider_listesi", [])
-        st.session_state.gider_listesi.append(
-            {"Kategori": gider_kategori, "Miktar": gider_miktar, "Tarih": gider_tarih})
-        st.success("Gider başarıyla eklendi!")
+@st.cache_resource
+def read_pdf(file):
+    pdfReader = PdfReader(file)
+    count = len(pdfReader.pages)
 
-# Gelir ve gider verilerini gösterme
-st.header("Gelir ve Gider Verileri")
+    all_page_text = ""
 
-if "gelir_listesi" in st.session_state:
-    st.subheader("Gelirler")
-    df_gelir = pd.DataFrame(st.session_state.gelir_listesi)
-    st.table(df_gelir)
-else:
-    st.info("Henüz gelir eklenmedi.")
+    for i in range(count):  # for i in range (0, count-1) ///  for i in range (len(pdfReader.pages))
+        page = pdfReader.pages[i]
+        all_page_text += page.extract_text()
 
-if "gider_listesi" in st.session_state:
-    st.subheader("Giderler")
-    df_gider = pd.DataFrame(st.session_state.gider_listesi)
-    st.table(df_gider)
-else:
-    st.info("Henüz gider eklenmedi.")
+    return all_page_text
 
-# Gelir ve gider analizi
-st.header("Gelir ve Gider Analizi")
 
-if "gelir_listesi" in st.session_state and "gider_listesi" in st.session_state:
-    df_gelir = pd.DataFrame(st.session_state.gelir_listesi)
-    df_gider = pd.DataFrame(st.session_state.gider_listesi)
+@st.cache_resource
+def read_pdf_2(file_path):
+    doc = fitz.open(file_path)
+    images = []
+    # count = len(doc)
+    for i in range(len(doc)):  # for i in range(count)
+        page = doc.load_page(i)
+        pix = page.get_pixmap()
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(img)
+    return images
 
-    if not df_gelir.empty and not df_gider.empty:
-        # Gelir ve gider verilerini birleştir
-        df_gelir["Tarih"] = pd.to_datetime(df_gelir["Tarih"])
-        df_gider["Tarih"] = pd.to_datetime(df_gider["Tarih"])
+@st.cache_resource
+def get_gemini_response(prompt):
+    safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_LOW_AND_ABOVE",
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+            },
+        ]
 
-        # Gelir ve gider miktarlarını birleştir
-        df_gelir["Tür"] = "Gelir"
-        df_gider["Tür"] = "Gider"
-        df = pd.concat([df_gelir, df_gider])
 
-        # Toplam gelir ve gider hesapla
-        toplam_gelir = df_gelir["Miktar"].sum()
-        toplam_gider = df_gider["Miktar"].sum()
+    generation_config = {
+            "temperature": 0.4,
+            "top_p": 0.95,
+            "top_k": 64,
+            "max_output_tokens": 18192,
+            "response_mime_type": "text/plain",
+        }
 
-        # Pasta grafiği için veri hazırla
-        labels = ["Gelir", "Gider"]
-        sizes = [toplam_gelir, toplam_gider]
-        colors = ['#ff9999', '#66b3ff']
-        explode = (0.1, 0)  # Pencere dışına çıkar
 
-        # Pasta grafiği oluştur
-        fig1, ax1 = plt.subplots()
-        ax1.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-        ax1.axis('equal')  # Daireyi daire olarak görüntüle
-        plt.title("Toplam Gelir ve Gider Dağılımı")
-        st.pyplot(fig1)
-    else:
-        st.info("Gelir veya gider verisi bulunamadı.")
+    model = genai.GenerativeModel(
+        safety_settings = safety_settings,
+        generation_config = generation_config,
+        model_name ="gemini-1.5-flash-latest")
 
+    prompt_token_count = model.count_tokens(prompt)
+
+    response = model.generate_content(prompt).text
+
+    response_token_count = model.count_token(response)
+
+    total_token_count = model.count_token(response)
+    total_token_count = int(total_token_count)
+
+    return response, total_token_count
+
+
+
+
+
+st.sidebar.header("ATS v2 Hoşgeldiniz")
+
+deneyim_suresi = st.number_input(label = "Deneyim süresi", min_value=0,max_value = 15, value=2)
+
+
+#st.file
+
+user_input  = st.text_input("lütfen sorgunuzu beliritniz:")
+
+prompt = (f"""
+Sen 10 yıllık tecrübeli bir İk uzmanısın.Eline gelen CV örenğindeki iş ilanı için minimum 5 yıl deneyimli aday aranıyor. Gönderilen CV örneğindeki adayın tecrübe süresi {deneyim_suresi} yıldır.
+         """)
+
+st.sidebar.radio("Döküman uzantınızı seçin", ["PDF", "PDF uzantılı olmayan"])
+
+if st.button("Üret"):
+
+    response = get_gemini_response(prompt)
+    st.markdown(response)
 
