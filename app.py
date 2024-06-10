@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.header("Uygulama v1")
+st.header("Uygulama")
 
 genai.configure(api_key="AIzaSyBjnu3n-XSsCe1UtEFMZ4Obhd4HY12FaH4")
 
